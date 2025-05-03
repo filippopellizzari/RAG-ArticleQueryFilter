@@ -23,8 +23,6 @@ Data preparation steps:
 
 ### 2. RAG index
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1L8bPNyLqVOjC5V_csGyWo0PnYl9uc0uD#scrollTo=NQnHjWNv__rk)
-
 #### What is RAG indexing?
 
 RAG indexing is a process designed to optimize data retrieval for Retrieval-Augmented Generation (RAG) systems. Key components:
