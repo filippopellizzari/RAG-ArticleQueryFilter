@@ -5,16 +5,21 @@ import pandas as pd
 
 INPUT_CORPUS_FILENAME = "dataset/corpus.csv"
 OUTPUT_CORPUS_FILENAME = "dataset/corpus_clean.csv"
+OUTPUT_CORPUS_MINIMAL_FILENAME = "dataset/corpus_minimal_clean.csv"
 
 
 def clean_text(text: str) -> str:
-    """Normalize text"""
-    # remove newline
+    """Aggressive normalization: lowercase, strip non-ASCII."""
     text = text.replace("\n", " ")
-    # lowercase and remove extra spaces
     text = text.lower().strip()
-    # remove unicode
     text = re.sub(r"[^\x00-\x7F]+", "", text)
+    return text
+
+
+def minimal_clean_text(text: str) -> str:
+    """Minimal normalization: preserve casing and unicode, only fix whitespace."""
+    text = text.replace("\n", " ")
+    text = re.sub(r"\s+", " ", text).strip()
     return text
 
 
@@ -24,16 +29,22 @@ def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
     logging.info("Starting data cleaning")
-    # Read corpus dataset
     corpus = pd.read_csv(INPUT_CORPUS_FILENAME)
 
     # Create a text column by concatenating title and body
     corpus["text"] = corpus["title"] + " " + corpus["body"]
-    # Clean text
-    corpus["text"] = corpus["text"].apply(clean_text)
 
-    logging.info("Saving output")
-    corpus.to_csv(OUTPUT_CORPUS_FILENAME)
+    # Aggressive clean (original)
+    corpus_clean = corpus.copy()
+    corpus_clean["text"] = corpus_clean["text"].apply(clean_text)
+    corpus_clean.to_csv(OUTPUT_CORPUS_FILENAME, index=False)
+    logging.info("Saved %s", OUTPUT_CORPUS_FILENAME)
+
+    # Minimal clean (preserves casing + unicode)
+    corpus_minimal = corpus.copy()
+    corpus_minimal["text"] = corpus_minimal["text"].apply(minimal_clean_text)
+    corpus_minimal.to_csv(OUTPUT_CORPUS_MINIMAL_FILENAME, index=False)
+    logging.info("Saved %s", OUTPUT_CORPUS_MINIMAL_FILENAME)
 
     logging.info("End")
 

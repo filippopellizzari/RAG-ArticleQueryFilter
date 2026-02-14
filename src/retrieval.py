@@ -1,5 +1,8 @@
 from collections import defaultdict
+from typing import Callable
 
+from llama_index.core.base.base_retriever import BaseRetriever
+from llama_index.core.postprocessor import SentenceTransformerRerank
 from llama_index.core.schema import NodeWithScore
 
 
@@ -27,3 +30,30 @@ def reciprocal_rank_fusion(
         NodeWithScore(node=node_map[nid].node, score=rrf_scores[nid])
         for nid in sorted_ids
     ]
+
+
+def make_hybrid_retrieval_fn(
+    vector_retriever: BaseRetriever,
+    bm25_retriever: BaseRetriever,
+) -> Callable[[str], list[NodeWithScore]]:
+    """Return a retrieval function that fuses vector + BM25 results with RRF."""
+
+    def retrieve(query: str) -> list[NodeWithScore]:
+        vector_results = vector_retriever.retrieve(query)
+        bm25_results = bm25_retriever.retrieve(query)
+        return reciprocal_rank_fusion([vector_results, bm25_results])
+
+    return retrieve
+
+
+def make_rerank_retrieval_fn(
+    retriever: BaseRetriever,
+    reranker: SentenceTransformerRerank,
+) -> Callable[[str], list[NodeWithScore]]:
+    """Return a retrieval function that retrieves then re-ranks."""
+
+    def retrieve(query: str) -> list[NodeWithScore]:
+        candidates = retriever.retrieve(query)
+        return reranker.postprocess_nodes(candidates, query_str=query)
+
+    return retrieve
