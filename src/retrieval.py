@@ -14,6 +14,17 @@ def reciprocal_rank_fusion(
     For each document, RRF score = sum over all lists of 1 / (k + rank).
     The constant k (default 60) dampens the effect of high rankings.
     Reference: Cormack et al., 2009.
+
+    Args:
+        ranked_lists: List of ranked result lists to merge. Each inner list is
+            a sequence of ``NodeWithScore`` objects ordered by relevance.
+        k: Smoothing constant that controls sensitivity to high rankings.
+            Larger values reduce the advantage of top-ranked results.
+
+    Returns:
+        Single merged list of ``NodeWithScore`` objects sorted by descending
+        RRF score. Each node appears exactly once; its score is the sum of its
+        RRF contributions across all input lists.
     """
     rrf_scores: dict[str, float] = defaultdict(float)
     node_map: dict[str, NodeWithScore] = {}
@@ -39,12 +50,18 @@ def make_hybrid_retrieval_fn(
 ) -> Callable[[str], list[NodeWithScore]]:
     """Return a retrieval function that fuses vector + BM25 results with RRF.
 
-    Parameters
-    ----------
-    bm25_query_preprocessor : optional callable
-        Applied to the query string before BM25 retrieval only. Use ``str.lower``
-        when the corpus was indexed with aggressive lowercasing (e.g. clean_text()),
-        to avoid a silent query–corpus case mismatch in term matching.
+    Args:
+        vector_retriever: Dense vector retriever (e.g. bge-large backed by
+            ChromaDB).
+        bm25_retriever: Sparse BM25 retriever.
+        bm25_query_preprocessor: Optional callable applied to the query string
+            before BM25 retrieval only. Pass ``str.lower`` when the corpus was
+            indexed with aggressive lowercasing (e.g. ``clean_text()``) to
+            avoid a silent query–corpus case mismatch in term matching.
+
+    Returns:
+        Callable that accepts a query string and returns a merged, RRF-scored
+        list of ``NodeWithScore`` objects.
     """
 
     def retrieve(query: str) -> list[NodeWithScore]:
@@ -60,7 +77,16 @@ def make_rerank_retrieval_fn(
     retriever: BaseRetriever,
     reranker: SentenceTransformerRerank,
 ) -> Callable[[str], list[NodeWithScore]]:
-    """Return a retrieval function that retrieves then re-ranks."""
+    """Return a retrieval function that retrieves then re-ranks.
+
+    Args:
+        retriever: Initial retriever used to fetch candidate nodes.
+        reranker: Cross-encoder reranker that reorders the candidates.
+
+    Returns:
+        Callable that accepts a query string and returns the candidate nodes
+        reordered by the cross-encoder score.
+    """
 
     def retrieve(query: str) -> list[NodeWithScore]:
         candidates = retriever.retrieve(query)

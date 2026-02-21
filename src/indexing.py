@@ -34,27 +34,21 @@ def build_index(
     If the named collection already contains documents the existing index is
     returned immediately — no re-embedding is performed.
 
-    Parameters
-    ----------
-    corpus_df:
-        DataFrame with at least ``text`` and ``uuid`` columns.
-    collection_name:
-        ChromaDB collection name. Use distinct names for different
-        corpus/model combinations to avoid cross-contamination.
-    chunk_size:
-        Token budget per chunk (SentenceSplitter).
-    chunk_overlap:
-        Overlap in tokens between adjacent chunks.
-    embed_model_name:
-        HuggingFace model identifier for the embedding model.
-    chroma_path:
-        Override the default ChromaDB persistence directory.
+    Args:
+        corpus_df: DataFrame with at least ``text`` and ``uuid`` columns.
+        collection_name: ChromaDB collection name. Use distinct names for
+            different corpus/model combinations to avoid cross-contamination.
+        chunk_size: Token budget per chunk (SentenceSplitter).
+        chunk_overlap: Overlap in tokens between adjacent chunks.
+        embed_model_name: HuggingFace model identifier for the embedding model.
+        chroma_path: Override the default ChromaDB persistence directory.
+            Defaults to ``CHROMA_DB_PATH`` from ``src.config``.
+
+    Returns:
+        A ``VectorStoreIndex`` backed by the named ChromaDB collection.
     """
     path = str(chroma_path or CHROMA_DB_PATH)
-    documents = [
-        Document(text=row["text"], doc_id=row["uuid"])
-        for _, row in corpus_df.iterrows()
-    ]
+    documents = [Document(text=row["text"], doc_id=row["uuid"]) for _, row in corpus_df.iterrows()]
 
     db = chromadb.PersistentClient(path=path)
     collection = db.get_or_create_collection(collection_name)
@@ -84,8 +78,21 @@ def load_index(
 ) -> VectorStoreIndex:
     """Load a pre-built index from ChromaDB (no re-embedding).
 
-    Used by the API server at startup. Raises ``ValueError`` if the collection
-    is empty (index has not been built yet — run ``run-experiments`` first).
+    Used by the API server at startup.
+
+    Args:
+        collection_name: ChromaDB collection to load. Defaults to the best
+            experimental configuration (``v2_bge_large``).
+        embed_model_name: HuggingFace model identifier used when the index was
+            built. Must match the collection's embedding model.
+        chroma_path: Override the default ChromaDB persistence directory.
+
+    Returns:
+        A ``VectorStoreIndex`` ready for querying.
+
+    Raises:
+        ValueError: If the collection is empty, meaning the index has not been
+            built yet. Run ``run-experiments`` first.
     """
     path = str(chroma_path or CHROMA_DB_PATH)
     db = chromadb.PersistentClient(path=path)
@@ -99,9 +106,7 @@ def load_index(
 
     vector_store = ChromaVectorStore(chroma_collection=collection)
     embed_model = HuggingFaceEmbedding(model_name=embed_model_name)
-    return VectorStoreIndex.from_vector_store(
-        vector_store=vector_store, embed_model=embed_model
-    )
+    return VectorStoreIndex.from_vector_store(vector_store=vector_store, embed_model=embed_model)
 
 
 def retrieve_doc_uuids(
@@ -109,7 +114,17 @@ def retrieve_doc_uuids(
     index: VectorStoreIndex,
     top_k: int = SIMILARITY_TOP_K,
 ) -> list[str]:
-    """Return deduplicated source-document UUIDs for a query, ranked by relevance."""
+    """Return deduplicated source-document UUIDs for a query, ranked by relevance.
+
+    Args:
+        query: Free-text search query.
+        index: Pre-built ``VectorStoreIndex`` to query against.
+        top_k: Maximum number of chunks to retrieve before deduplication.
+
+    Returns:
+        Ordered list of unique source-document UUIDs. The first chunk from each
+        document determines its rank position.
+    """
     retriever = index.as_retriever(similarity_top_k=top_k)
     results = retriever.retrieve(query)
 

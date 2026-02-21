@@ -27,6 +27,12 @@ def clean_text(text: str) -> str:
     Non-ASCII characters are replaced with a space (not removed outright) to
     avoid silently merging adjacent tokens (e.g. "word1\u2014word2" must not
     become "word1word2").
+
+    Args:
+        text: Raw input string.
+
+    Returns:
+        Lowercased, ASCII-only string with collapsed whitespace.
     """
     text = re.sub(r"\s+", " ", text).strip()
     text = text.lower()
@@ -39,6 +45,13 @@ def minimal_clean_text(text: str) -> str:
 
     Preserves casing, punctuation, and unicode — critical for BM25 entity
     matching and for embedding models trained on mixed-case text.
+
+    Args:
+        text: Raw input string.
+
+    Returns:
+        String with all whitespace runs collapsed to a single space and
+        leading/trailing whitespace stripped. Casing and unicode are unchanged.
     """
     return re.sub(r"\s+", " ", text).strip()
 

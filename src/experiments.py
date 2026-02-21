@@ -3,8 +3,7 @@
 Runs five retrieval experiments on the minimal-clean corpus and prints a
 comparison table. Results are documented in ``results/retrieval_experiments.md``.
 
-Usage
------
+Typical usage:
     run-experiments          # via pyproject.toml [project.scripts]
     python -m src.experiments
 """
@@ -38,13 +37,21 @@ TOP_K = SIMILARITY_TOP_K  # local alias used throughout this module
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+
 def word_tokenize(text: str) -> list[str]:
     """Extract alphanumeric tokens, preserving case.
 
     Improvement over rank_bm25's default whitespace split:
-    - "City."  → ["City"]     not ["City."]
-    - "2-0"    → ["2", "0"]   numeric components separated correctly
+
+    - ``"City."``  → ``["City"]``     not ``["City."]``
+    - ``"2-0"``    → ``["2", "0"]``   numeric components separated correctly
     - Preserves casing for entity matching on the minimal-clean corpus.
+
+    Args:
+        text: Input string to tokenise.
+
+    Returns:
+        List of alphanumeric tokens extracted from ``text``.
     """
     return re.findall(r"[A-Za-z0-9]+", text)
 
@@ -54,24 +61,43 @@ def make_hybrid_fn(
     bm25_retriever,
     top_k: int = TOP_K,
 ):
-    """Return a fair RRF hybrid retriever truncated to *top_k* chunks.
+    """Return a fair RRF hybrid retriever truncated to ``top_k`` chunks.
 
     Without truncation a hybrid returns up to ``2×top_k`` results, giving it an
     unfair recall advantage over single-retriever baselines at the same top_k.
+
+    Args:
+        vector_retriever: Dense vector retriever instance.
+        bm25_retriever: Sparse BM25 retriever instance.
+        top_k: Maximum number of chunks to return after RRF merging.
+
+    Returns:
+        Callable that accepts a query string and returns at most ``top_k``
+        RRF-merged ``NodeWithScore`` objects.
     """
+
     def retrieve(query: str) -> list[NodeWithScore]:
-        merged = reciprocal_rank_fusion([
-            vector_retriever.retrieve(query),
-            bm25_retriever.retrieve(query),
-        ])
+        merged = reciprocal_rank_fusion(
+            [
+                vector_retriever.retrieve(query),
+                bm25_retriever.retrieve(query),
+            ]
+        )
         return merged[:top_k]
+
     return retrieve
 
 
 # ── Experiment runner ──────────────────────────────────────────────────────────
 
+
 def run() -> dict[str, dict[str, float]]:
-    """Execute all five experiments and return a dict of {label: metrics}."""
+    """Execute all five experiments and return a dict of {label: metrics}.
+
+    Returns:
+        Dict mapping experiment label to a metrics dict with keys
+        ``recall``, ``precision``, ``f1``, ``hit_rate``, ``mrr``.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s  %(message)s",
@@ -79,13 +105,13 @@ def run() -> dict[str, dict[str, float]]:
     )
 
     log.info("Loading corpus and queries …")
-    corpus_df  = pd.read_csv(CORPUS_PATH)
+    corpus_df = pd.read_csv(CORPUS_PATH)
     queries_df = pd.read_csv(QUERIES_PATH)
     log.info("Corpus: %d articles | Queries: %d", len(corpus_df), len(queries_df))
 
-    documents   = [Document(text=r["text"], doc_id=r["uuid"]) for _, r in corpus_df.iterrows()]
+    documents = [Document(text=r["text"], doc_id=r["uuid"]) for _, r in corpus_df.iterrows()]
     node_parser = SentenceSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    nodes       = node_parser.get_nodes_from_documents(documents)
+    nodes = node_parser.get_nodes_from_documents(documents)
     log.info("Chunks: %d (size=%d, overlap=%d)", len(nodes), CHUNK_SIZE, CHUNK_OVERLAP)
 
     results: dict[str, dict] = {}
@@ -93,11 +119,14 @@ def run() -> dict[str, dict[str, float]]:
     # ── 1. Baseline ────────────────────────────────────────────────────────────
     log.info("=" * 60)
     log.info("Exp 1 / Baseline — bge-small-en-v1.5 | top_k=2 | chunk=%d", CHUNK_SIZE)
-    baseline_index     = build_index(corpus_df, collection_name="v2_baseline")
+    baseline_index = build_index(corpus_df, collection_name="v2_baseline")
     baseline_retriever = baseline_index.as_retriever(similarity_top_k=2)
     results["1. Baseline (bge-small, k=2)"] = summarize_results(
         evaluate_retrieval_fn(
-            baseline_retriever.retrieve, queries_df, SAMPLE_SIZE, RANDOM_STATE,
+            baseline_retriever.retrieve,
+            queries_df,
+            SAMPLE_SIZE,
+            RANDOM_STATE,
             desc="Baseline",
         )
     )
@@ -112,7 +141,10 @@ def run() -> dict[str, dict[str, float]]:
     )
     results["2. BM25 word-tokenised (k=5)"] = summarize_results(
         evaluate_retrieval_fn(
-            bm25_retriever.retrieve, queries_df, SAMPLE_SIZE, RANDOM_STATE,
+            bm25_retriever.retrieve,
+            queries_df,
+            SAMPLE_SIZE,
+            RANDOM_STATE,
             desc="BM25",
         )
     )
@@ -130,7 +162,10 @@ def run() -> dict[str, dict[str, float]]:
     bge_base_retriever = bge_base_index.as_retriever(similarity_top_k=TOP_K)
     results["3. bge-base Vector (k=5)"] = summarize_results(
         evaluate_retrieval_fn(
-            bge_base_retriever.retrieve, queries_df, SAMPLE_SIZE, RANDOM_STATE,
+            bge_base_retriever.retrieve,
+            queries_df,
+            SAMPLE_SIZE,
+            RANDOM_STATE,
             desc="bge-base",
         )
     )
@@ -141,7 +176,10 @@ def run() -> dict[str, dict[str, float]]:
     hybrid_base_fn = make_hybrid_fn(bge_base_retriever, bm25_retriever, top_k=TOP_K)
     results["4. bge-base + BM25 Hybrid (k=5)"] = summarize_results(
         evaluate_retrieval_fn(
-            hybrid_base_fn, queries_df, SAMPLE_SIZE, RANDOM_STATE,
+            hybrid_base_fn,
+            queries_df,
+            SAMPLE_SIZE,
+            RANDOM_STATE,
             desc="bge-base Hybrid",
         )
     )
@@ -158,10 +196,13 @@ def run() -> dict[str, dict[str, float]]:
         embed_model_name="BAAI/bge-large-en-v1.5",
     )
     bge_large_retriever = bge_large_index.as_retriever(similarity_top_k=TOP_K)
-    hybrid_large_fn     = make_hybrid_fn(bge_large_retriever, bm25_retriever, top_k=TOP_K)
+    hybrid_large_fn = make_hybrid_fn(bge_large_retriever, bm25_retriever, top_k=TOP_K)
     results["5. bge-large + BM25 Hybrid (k=5)"] = summarize_results(
         evaluate_retrieval_fn(
-            hybrid_large_fn, queries_df, SAMPLE_SIZE, RANDOM_STATE,
+            hybrid_large_fn,
+            queries_df,
+            SAMPLE_SIZE,
+            RANDOM_STATE,
             desc="bge-large Hybrid",
         )
     )
@@ -171,7 +212,7 @@ def run() -> dict[str, dict[str, float]]:
 
 def main() -> None:
     """CLI entry point: run experiments and print the results table."""
-    results    = run()
+    results = run()
     summary_df = pd.DataFrame(results).T
     summary_df.index.name = "experiment"
 
@@ -181,8 +222,8 @@ def main() -> None:
     print(summary_df.to_string(float_format=lambda x: f"{x:.4f}"))
 
     baseline_f1 = results["1. Baseline (bge-small, k=2)"]["f1"]
-    best_name   = summary_df["f1"].idxmax()
-    best_f1     = summary_df.loc[best_name, "f1"]
+    best_name = summary_df["f1"].idxmax()
+    best_f1 = summary_df.loc[best_name, "f1"]
 
     print(f"\nBest configuration : {best_name}")
     print(

@@ -24,5 +24,12 @@ def _pipeline():
 
 
 def is_query_valid(query: str) -> bool:
-    """Return True if the query does not contain harmful content."""
+    """Return True if the query does not contain harmful content.
+
+    Args:
+        query: Free-text query string to classify.
+
+    Returns:
+        True if the classifier labels the query as non-toxic, False otherwise.
+    """
     return _pipeline()(query)[0]["label"] == "non-toxic"

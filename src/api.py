@@ -1,12 +1,10 @@
 """FastAPI application for the RAG Article Query Filter.
 
-Endpoints
----------
-GET  /health   Liveness check.
-POST /query    Retrieve relevant article UUIDs for a (non-toxic) query.
+Endpoints:
+    GET  /health   Liveness check.
+    POST /query    Retrieve relevant article UUIDs for a (non-toxic) query.
 
-Usage
------
+Typical usage:
     uvicorn src.api:app --reload
 """
 
@@ -48,21 +46,19 @@ async def handle_query(
     query: str,
     request: Request,
 ) -> dict[str, list[str]]:
-    """Return ranked article UUIDs relevant to *query*.
+    """Return ranked article UUIDs relevant to the query.
 
-    Parameters
-    ----------
-    query:
-        Free-text search query (passed as a query-string parameter).
+    Args:
+        query: Free-text search query passed as a query-string parameter.
+        request: FastAPI request object used to access ``app.state.index``.
 
-    Returns
-    -------
-    JSON object with a ``uuids`` list of ranked article identifiers.
+    Returns:
+        JSON object with a ``uuids`` key containing a ranked list of article
+        identifiers.
 
-    Raises
-    ------
-    422 Unprocessable Entity
-        If the query is classified as harmful by the toxicity filter.
+    Raises:
+        HTTPException: 422 Unprocessable Entity if the query is classified as
+            harmful by the toxicity filter.
     """
     if not is_query_valid(query):
         raise HTTPException(status_code=422, detail="Harmful content detected.")
