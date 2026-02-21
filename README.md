@@ -95,7 +95,19 @@ Builds ChromaDB indices for each embedding model (cached on re-runs) and prints 
 full results table. See [`results/retrieval_experiments.md`](results/retrieval_experiments.md)
 for the pre-computed results.
 
-### 3. Start the API
+### 3. Run the tests
+
+```bash
+# Install dev extras first (pytest + httpx)
+uv sync --extra dev
+
+pytest tests/
+```
+
+All tests run without a pre-built index or GPU — heavy dependencies (ChromaDB, BERT,
+embedding models) are mocked at the test boundary.
+
+### 4. Start the API
 
 ```bash
 uvicorn src.api:app --reload
@@ -157,5 +169,5 @@ src/
 results/
 └── retrieval_experiments.md   experiment report (methodology + results + findings)
 
-tests/                         test scaffold (pytest-ready)
+tests/                         tests
 ```
