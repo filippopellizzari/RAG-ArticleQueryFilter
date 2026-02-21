@@ -35,12 +35,22 @@ def reciprocal_rank_fusion(
 def make_hybrid_retrieval_fn(
     vector_retriever: BaseRetriever,
     bm25_retriever: BaseRetriever,
+    bm25_query_preprocessor: Callable[[str], str] | None = None,
 ) -> Callable[[str], list[NodeWithScore]]:
-    """Return a retrieval function that fuses vector + BM25 results with RRF."""
+    """Return a retrieval function that fuses vector + BM25 results with RRF.
+
+    Parameters
+    ----------
+    bm25_query_preprocessor : optional callable
+        Applied to the query string before BM25 retrieval only. Use ``str.lower``
+        when the corpus was indexed with aggressive lowercasing (e.g. clean_text()),
+        to avoid a silent query–corpus case mismatch in term matching.
+    """
 
     def retrieve(query: str) -> list[NodeWithScore]:
         vector_results = vector_retriever.retrieve(query)
-        bm25_results = bm25_retriever.retrieve(query)
+        bm25_query = bm25_query_preprocessor(query) if bm25_query_preprocessor else query
+        bm25_results = bm25_retriever.retrieve(bm25_query)
         return reciprocal_rank_fusion([vector_results, bm25_results])
 
     return retrieve

@@ -1,30 +1,28 @@
+"""Retrieval evaluation metrics and evaluation runner.
+
+This module is intentionally limited to *evaluation* concerns only.
+Index construction lives in ``src.indexing``.
+"""
+
 import ast
 from typing import Callable
 
-import chromadb
 import pandas as pd
-from llama_index.core import Document, StorageContext, VectorStoreIndex
-from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import NodeWithScore
-from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.vector_stores.chroma import ChromaVectorStore
 from tqdm import tqdm
 
 
-# ---------------------------------------------------------------------------
-# Metrics (per-query)
-# ---------------------------------------------------------------------------
-
+# ── Per-query metrics ──────────────────────────────────────────────────────────
 
 def recall_at_k(predicted: list[str], relevant: list[str]) -> float:
-    """Fraction of relevant documents that appear in predictions."""
+    """Fraction of relevant documents that appear in the predicted set."""
     if not relevant:
         return 0.0
     return len(set(predicted) & set(relevant)) / len(relevant)
 
 
 def precision_at_k(predicted: list[str], relevant: list[str]) -> float:
-    """Fraction of predictions that are relevant."""
+    """Fraction of predicted documents that are relevant."""
     if not predicted:
         return 0.0
     return len(set(predicted) & set(relevant)) / len(predicted)
@@ -34,20 +32,18 @@ def f1_at_k(predicted: list[str], relevant: list[str]) -> float:
     """Harmonic mean of precision and recall."""
     p = precision_at_k(predicted, relevant)
     r = recall_at_k(predicted, relevant)
-    if p + r == 0:
-        return 0.0
-    return 2 * p * r / (p + r)
+    return 2 * p * r / (p + r) if (p + r) > 0 else 0.0
 
 
 def hit_rate(predicted: list[str], relevant: list[str]) -> float:
-    """1.0 if at least one relevant document is in predictions, else 0.0."""
+    """1.0 if at least one relevant document is retrieved, else 0.0."""
     if not relevant:
         return 0.0
     return 1.0 if set(predicted) & set(relevant) else 0.0
 
 
 def mrr(predicted: list[str], relevant: list[str]) -> float:
-    """Mean Reciprocal Rank — 1/rank of the first relevant result."""
+    """Reciprocal rank of the first relevant result (0 if none found)."""
     relevant_set = set(relevant)
     for rank, doc_id in enumerate(predicted, start=1):
         if doc_id in relevant_set:
@@ -55,8 +51,23 @@ def mrr(predicted: list[str], relevant: list[str]) -> float:
     return 0.0
 
 
+_METRICS: dict[str, Callable[[list[str], list[str]], float]] = {
+    "recall": recall_at_k,
+    "precision": precision_at_k,
+    "f1": f1_at_k,
+    "hit_rate": hit_rate,
+    "mrr": mrr,
+}
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
 def extract_doc_uuids(results: list[NodeWithScore]) -> list[str]:
-    """Deduplicate NodeWithScore results by source document UUID, preserving rank order."""
+    """Deduplicate chunk-level results to unique source-document UUIDs.
+
+    Preserves rank order: the first chunk from each document determines its
+    position in the returned list.
+    """
     seen: set[str] = set()
     uuids: list[str] = []
     for res in results:
@@ -67,19 +78,7 @@ def extract_doc_uuids(results: list[NodeWithScore]) -> list[str]:
     return uuids
 
 
-METRICS = {
-    "recall": recall_at_k,
-    "precision": precision_at_k,
-    "f1": f1_at_k,
-    "hit_rate": hit_rate,
-    "mrr": mrr,
-}
-
-
-# ---------------------------------------------------------------------------
-# Evaluation runner
-# ---------------------------------------------------------------------------
-
+# ── Evaluation runner ──────────────────────────────────────────────────────────
 
 def evaluate_retrieval_fn(
     retrieval_fn: Callable[[str], list[NodeWithScore]],
@@ -88,30 +87,30 @@ def evaluate_retrieval_fn(
     random_state: int = 42,
     desc: str = "Evaluating",
 ) -> pd.DataFrame:
-    """Evaluate any retrieval function that maps query → list[NodeWithScore].
-
-    This is the core evaluation function. It works with plain retrievers,
-    hybrid pipelines, re-ranking pipelines, or any custom logic.
+    """Evaluate any retrieval function on a sample of labelled queries.
 
     Parameters
     ----------
-    retrieval_fn : Callable[[str], list[NodeWithScore]]
-        A function that takes a query string and returns ranked results.
-    queries_df : pd.DataFrame
-        Must have columns ``query`` and ``result`` (stringified list of UUIDs).
-    sample_size : int
-        Number of queries to evaluate on.
-    random_state : int
-        Seed for reproducibility.
-    desc : str
-        Progress bar description.
+    retrieval_fn:
+        Any callable that maps a query string to a ranked list of
+        ``NodeWithScore`` objects (vector retriever, hybrid pipeline, etc.).
+    queries_df:
+        DataFrame with ``query`` and ``result`` columns. ``result`` must be a
+        stringified list of ground-truth document UUIDs.
+    sample_size:
+        Number of queries to evaluate (sampled without replacement).
+    random_state:
+        Random seed for reproducibility.
+    desc:
+        Progress-bar label.
 
     Returns
     -------
-    pd.DataFrame with per-query metrics.
+    DataFrame with one row per query and one column per metric.
     """
     sample = (
-        queries_df.sample(min(sample_size, len(queries_df)), random_state=random_state)
+        queries_df
+        .sample(min(sample_size, len(queries_df)), random_state=random_state)
         .copy()
         .reset_index(drop=True)
     )
@@ -119,11 +118,11 @@ def evaluate_retrieval_fn(
     records: list[dict] = []
     for idx in tqdm(range(len(sample)), desc=desc):
         query_text = sample.loc[idx, "query"]
-        relevant = ast.literal_eval(sample.loc[idx, "result"])
-        predicted = extract_doc_uuids(retrieval_fn(query_text))
+        relevant   = ast.literal_eval(sample.loc[idx, "result"])
+        predicted  = extract_doc_uuids(retrieval_fn(query_text))
 
         record = {"query": query_text}
-        for name, fn in METRICS.items():
+        for name, fn in _METRICS.items():
             record[name] = fn(predicted, relevant)
         records.append(record)
 
@@ -131,51 +130,5 @@ def evaluate_retrieval_fn(
 
 
 def summarize_results(results_df: pd.DataFrame) -> dict[str, float]:
-    """Return mean of each metric."""
-    return {m: round(results_df[m].mean(), 4) for m in METRICS}
-
-
-# ---------------------------------------------------------------------------
-# Index builder helper
-# ---------------------------------------------------------------------------
-
-
-def build_index(
-    corpus_df: pd.DataFrame,
-    collection_name: str,
-    chunk_size: int = 256,
-    chunk_overlap: int = 20,
-    embed_model_name: str = "BAAI/bge-small-en-v1.5",
-    chroma_path: str = "./chroma_db",
-) -> VectorStoreIndex:
-    """Build (or load) a ChromaDB-backed vector index.
-
-    If the collection already has documents, the existing index is loaded
-    instead of re-indexing.
-    """
-    documents = [
-        Document(text=row["text"], doc_id=row["uuid"])
-        for _, row in corpus_df.iterrows()
-    ]
-
-    db = chromadb.PersistentClient(path=chroma_path)
-    chroma_collection = db.get_or_create_collection(collection_name)
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    embed_model = HuggingFaceEmbedding(model_name=embed_model_name)
-
-    # If collection already populated, just load
-    if chroma_collection.count() > 0:
-        return VectorStoreIndex.from_vector_store(
-            vector_store=vector_store, embed_model=embed_model
-        )
-
-    # Otherwise build from scratch
-    node_parser = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    nodes = node_parser.get_nodes_from_documents(documents)
-    storage_context = StorageContext.from_defaults(vector_store=vector_store)
-    return VectorStoreIndex(
-        nodes,
-        embed_model=embed_model,
-        storage_context=storage_context,
-        show_progress=True,
-    )
+    """Return mean of each metric across all evaluated queries."""
+    return {m: round(results_df[m].mean(), 4) for m in _METRICS}
