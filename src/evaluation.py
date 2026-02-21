@@ -5,12 +5,11 @@ Index construction lives in ``src.indexing``.
 """
 
 import ast
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
 from llama_index.core.schema import NodeWithScore
 from tqdm import tqdm
-
 
 # ── Per-query metrics ──────────────────────────────────────────────────────────
 

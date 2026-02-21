@@ -8,8 +8,8 @@ Typical usage:
     uvicorn src.api:app --reload
 """
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
 

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Callable
+from collections.abc import Callable
 
 from llama_index.core.base.base_retriever import BaseRetriever
 from llama_index.core.postprocessor import SentenceTransformerRerank

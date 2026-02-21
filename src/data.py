@@ -21,24 +21,6 @@ from src.config import (
 log = logging.getLogger(__name__)
 
 
-def clean_text(text: str) -> str:
-    """Aggressive normalisation: lowercase and strip non-ASCII characters.
-
-    Non-ASCII characters are replaced with a space (not removed outright) to
-    avoid silently merging adjacent tokens (e.g. "word1\u2014word2" must not
-    become "word1word2").
-
-    Args:
-        text: Raw input string.
-
-    Returns:
-        Lowercased, ASCII-only string with collapsed whitespace.
-    """
-    text = re.sub(r"\s+", " ", text).strip()
-    text = text.lower()
-    text = re.sub(r"[^\x00-\x7F]+", " ", text)
-    return text.strip()
-
 
 def minimal_clean_text(text: str) -> str:
     """Conservative normalisation: collapse whitespace only.

@@ -119,7 +119,11 @@ def run() -> dict[str, dict[str, float]]:
     # ── 1. Baseline ────────────────────────────────────────────────────────────
     log.info("=" * 60)
     log.info("Exp 1 / Baseline — bge-small-en-v1.5 | top_k=2 | chunk=%d", CHUNK_SIZE)
-    baseline_index = build_index(corpus_df, collection_name="v2_baseline")
+    baseline_index = build_index(
+        corpus_df,
+        collection_name="v2_baseline",
+        embed_model_name="BAAI/bge-small-en-v1.5",
+    )
     baseline_retriever = baseline_index.as_retriever(similarity_top_k=2)
     results["1. Baseline (bge-small, k=2)"] = summarize_results(
         evaluate_retrieval_fn(
